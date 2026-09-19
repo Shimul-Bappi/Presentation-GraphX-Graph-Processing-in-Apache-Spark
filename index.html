@@ -1,0 +1,1216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0F172A">
+<title>GraphX: Graph Processing in Apache Spark</title>
+<style>
+/* ==========================================================================
+   0. RESET
+   ========================================================================== */
+*, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+img, svg, video { display:block; max-width:100%; height:auto; }
+button { font:inherit; color:inherit; }
+
+/* ==========================================================================
+   1. DESIGN TOKENS
+   ========================================================================== */
+:root {
+  /* Surfaces */
+  --dark:#0F172A; --dark-card:#1E293B; --dark-line:#334155;
+  --light:#F1F5F9; --white:#FFF; --line:#E2E8F0;
+
+  /* Accents */
+  --orange:#EA580C; --orange-lt:#FFF1E8; --glow:#FB923C;
+  --blue:#2563EB;   --blue-lt:#EFF6FF;
+  --green:#10B981;  --green-lt:#ECFDF5;
+  --amber:#F59E0B;  --amber-lt:#FFFBEB; --amber-dk:#B45309;
+  --purple:#8B5CF6; --purple-lt:#F5F3FF;
+  --rose:#F43F5E;   --rose-lt:#FFF1F2;
+  --teal:#14B8A6;   --teal-lt:#F0FDFA;
+
+  /* Text */
+  --ink:#0F172A; --ink-soft:#475569; --ink-mute:#64748B;
+  --paper:#F8FAFC; --paper-mute:#94A3B8;
+
+  /* Geometry */
+  --radius:14px;
+  --bar-h:4.2rem;
+  --pad-x:clamp(0.85rem, 3.2vw, 3rem);
+  --pad-y:clamp(0.75rem, 2.8vh, 2rem);
+  --gap:clamp(0.5rem, 1.5vh + 0.45vw, 1.15rem);
+
+  /* Safe areas (notched devices) */
+  --sa-l:env(safe-area-inset-left, 0px);
+  --sa-r:env(safe-area-inset-right, 0px);
+  --sa-b:env(safe-area-inset-bottom, 0px);
+  --sa-t:env(safe-area-inset-top, 0px);
+}
+
+/* ==========================================================================
+   2. FLUID TYPE SCALE  (responds to BOTH height and width)
+   ========================================================================== */
+html {
+  font-size: clamp(15px, 1.75vh + 0.5vw, 25px);
+  -webkit-text-size-adjust:100%;
+  text-size-adjust:100%;
+}
+
+/* Short screens (phone landscape, small laptops) → shrink */
+@media (max-height: 560px) {
+  html { font-size: clamp(12px, 2.4vh + 0.35vw, 17px); }
+  :root { --bar-h:3.2rem; --pad-y:0.5rem; --gap:0.45rem; }
+}
+/* Very narrow phones → shrink slightly */
+@media (max-width: 400px) {
+  html { font-size: clamp(14px, 3.6vw, 17px); }
+}
+/* Ultra-wide / 4K → cap growth, centre content */
+@media (min-width: 2000px) {
+  html { font-size: 26px; }
+}
+
+body {
+  font-family:"Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  background:var(--dark);
+  color:var(--ink);
+  line-height:1.55;
+  overflow:hidden;
+  width:100%;
+  min-height:100vh;
+  min-height:100dvh;
+  -webkit-font-smoothing:antialiased;
+  overscroll-behavior:none;
+}
+
+/* ==========================================================================
+   3. DECK SHELL
+   ========================================================================== */
+#deck {
+  position:relative;
+  width:100vw;
+  height:100vh;
+  height:100dvh;
+  overflow:hidden;
+  background:var(--light);
+}
+
+.slide {
+  position:absolute;
+  inset:0;
+  padding:
+    calc(var(--pad-y) + var(--sa-t))
+    calc(var(--pad-x) + var(--sa-r))
+    calc(var(--bar-h) + var(--sa-b) + 0.5rem)
+    calc(var(--pad-x) + var(--sa-l));
+  display:none;
+  flex-direction:column;
+  background:var(--light);
+  overflow-y:auto;
+  overflow-x:hidden;
+  scrollbar-width:thin;
+  scrollbar-color:var(--line) transparent;
+  -webkit-overflow-scrolling:touch;
+}
+.slide::-webkit-scrollbar { width:6px; }
+.slide::-webkit-scrollbar-thumb { background:var(--line); border-radius:3px; }
+.slide.dark::-webkit-scrollbar-thumb { background:var(--dark-line); }
+
+.slide.active { display:flex; animation:fadeUp .3s ease-out; }
+@keyframes fadeUp { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:none} }
+@media (prefers-reduced-motion: reduce) {
+  .slide.active { animation:none; }
+  * { transition:none !important; }
+}
+
+.slide.dark { background:var(--dark); color:var(--paper); }
+
+/* Inner wrapper caps width on huge monitors */
+.wrap {
+  width:100%;
+  max-width:1680px;
+  margin-inline:auto;
+  display:flex;
+  flex-direction:column;
+  flex:1 1 auto;
+  min-height:0;
+}
+
+/* ==========================================================================
+   4. HEADERS
+   ========================================================================== */
+.head { flex-shrink:0; margin-bottom:clamp(0.5rem,1.8vh,1.2rem); }
+
+.kicker {
+  display:inline-block;
+  font-size:.8rem; font-weight:800;
+  letter-spacing:.09em; text-transform:uppercase;
+  color:var(--orange); background:var(--orange-lt);
+  padding:.22rem .7rem; border-radius:40px; margin-bottom:.4rem;
+}
+.dark .kicker { color:var(--glow); background:rgba(251,146,60,.15); }
+
+.h1 {
+  font-size:clamp(1.45rem, 3.6vh + 0.85vw, 2.9rem);
+  font-weight:800; line-height:1.15; letter-spacing:-.015em;
+  overflow-wrap:break-word;
+}
+.dark .h1 { color:var(--paper); }
+
+.sub {
+  font-size:clamp(.88rem, 1.6vh + 0.28vw, 1.18rem);
+  color:var(--ink-mute); margin-top:.22rem; max-width:65ch;
+}
+.dark .sub { color:var(--paper-mute); }
+
+.body {
+  flex:1 1 auto; display:flex; flex-direction:column;
+  justify-content:center; gap:var(--gap); min-height:0;
+}
+/* On short/narrow screens stack from the top so nothing is clipped */
+@media (max-height:620px), (max-width:760px) {
+  .body { justify-content:flex-start; }
+}
+
+/* ==========================================================================
+   5. AUTO-FIT RESPONSIVE GRIDS  (no hardcoded breakpoints needed)
+   ========================================================================== */
+.grid { display:grid; gap:var(--gap); }
+
+.g2 { grid-template-columns:repeat(auto-fit, minmax(min(100%, 22rem), 1fr)); }
+.g3 { grid-template-columns:repeat(auto-fit, minmax(min(100%, 16rem), 1fr)); }
+.g4 { grid-template-columns:repeat(auto-fit, minmax(min(100%, 12.5rem), 1fr)); }
+.g6 { grid-template-columns:repeat(auto-fit, minmax(min(100%, 15rem), 1fr)); }
+
+.g-side {
+  grid-template-columns:repeat(auto-fit, minmax(min(100%, 21rem), 1fr));
+  align-items:start;
+}
+.g-cover {
+  grid-template-columns:repeat(auto-fit, minmax(min(100%, 20rem), 1fr));
+  align-items:center;
+}
+/* Give the cover text more room on wide screens */
+@media (min-width:1024px) {
+  .g-cover { grid-template-columns:1.35fr 0.9fr; }
+  .g-side  { grid-template-columns:1.15fr 1fr; }
+}
+
+/* ==========================================================================
+   6. CARDS
+   ========================================================================== */
+.card {
+  background:var(--white);
+  border:1px solid var(--line);
+  border-radius:var(--radius);
+  padding:clamp(.6rem, 1.4vh + .3vw, 1.15rem);
+  min-width:0;
+}
+.dark .card { background:var(--dark-card); border-color:var(--dark-line); }
+
+.tint-o{background:var(--orange-lt);border-color:#FED7AA}
+.tint-b{background:var(--blue-lt);border-color:#BFDBFE}
+.tint-g{background:var(--green-lt);border-color:#A7F3D0}
+.tint-a{background:var(--amber-lt);border-color:#FDE68A}
+.tint-p{background:var(--purple-lt);border-color:#DDD6FE}
+.tint-r{background:var(--rose-lt);border-color:#FECDD3}
+.tint-t{background:var(--teal-lt);border-color:#99F6E4}
+
+.st{border-top:5px solid}
+.st-o{border-top-color:var(--orange)} .st-b{border-top-color:var(--blue)}
+.st-g{border-top-color:var(--green)} .st-a{border-top-color:var(--amber)}
+.st-p{border-top-color:var(--purple)} .st-r{border-top-color:var(--rose)}
+.st-t{border-top-color:var(--teal)}
+
+.ct {
+  font-size:clamp(.98rem, 1.8vh + .22vw, 1.28rem);
+  font-weight:700; line-height:1.25; margin-bottom:.32rem;
+  display:flex; align-items:center; gap:.45rem; flex-wrap:wrap;
+}
+.ct .ico { font-size:1.2em; line-height:1; }
+
+.cs { font-size:.84rem; font-style:italic; color:var(--ink-mute); margin-bottom:.4rem; }
+.dark .cs { color:var(--paper-mute); }
+
+.cp {
+  font-size:clamp(.85rem, 1.55vh + .2vw, 1.08rem);
+  color:var(--ink-soft); line-height:1.55;
+}
+.dark .cp { color:var(--paper-mute); }
+
+/* ==========================================================================
+   7. LISTS
+   ========================================================================== */
+.bul { list-style:none; }
+.bul li {
+  position:relative; padding-left:1.15rem; margin-bottom:.48rem;
+  font-size:clamp(.85rem, 1.55vh + .2vw, 1.08rem);
+  color:var(--ink-soft); line-height:1.55;
+}
+.bul li:last-child { margin-bottom:0; }
+.bul li::before {
+  content:""; position:absolute; left:.05rem; top:.58em;
+  width:7px; height:7px; border-radius:50%; background:var(--orange);
+}
+.bul li strong { color:var(--ink); font-weight:700; }
+.dark .bul li { color:var(--paper-mute); }
+.dark .bul li strong { color:var(--paper); }
+.bul.b li::before{background:var(--blue)} .bul.g li::before{background:var(--green)}
+.bul.a li::before{background:var(--amber)} .bul.p li::before{background:var(--purple)}
+.bul.r li::before{background:var(--rose)}
+
+.num { list-style:none; counter-reset:n; }
+.num li {
+  position:relative; counter-increment:n; padding-left:1.95rem; margin-bottom:.5rem;
+  font-size:clamp(.85rem, 1.55vh + .2vw, 1.08rem);
+  color:var(--ink-soft); line-height:1.55;
+}
+.num li::before {
+  content:counter(n); position:absolute; left:0; top:.1em;
+  width:1.4rem; height:1.4rem; border-radius:50%;
+  background:var(--orange); color:#fff; font-size:.76rem; font-weight:800;
+  display:flex; align-items:center; justify-content:center;
+}
+.num li strong { color:var(--ink); }
+.dark .num li { color:var(--paper-mute); }
+.dark .num li strong { color:var(--paper); }
+.num.b li::before{background:var(--blue)} .num.p li::before{background:var(--purple)}
+
+/* ==========================================================================
+   8. FIGURES (SVG scales fluidly, hides on ultra-short screens)
+   ========================================================================== */
+.fig { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:.35rem; }
+.fig-cap { font-size:.8rem; font-weight:700; color:var(--ink-mute); text-align:center; }
+.dark .fig-cap { color:var(--paper-mute); }
+.svgfig { width:100%; max-width:100%; height:auto; }
+.svgfig text { font-family:"Segoe UI", system-ui, sans-serif; }
+
+/* Hide decorative figures when vertical space is critically low */
+@media (max-height:430px) {
+  .fig.optional { display:none; }
+}
+
+/* ==========================================================================
+   9. BANNERS / TAGS / CODE / TABLES
+   ========================================================================== */
+.banner {
+  background:var(--dark); color:var(--paper);
+  border-radius:10px; padding:.6rem 1rem; text-align:center;
+  font-weight:700; font-size:clamp(.84rem,1.5vh + .2vw,1.06rem);
+  overflow-wrap:break-word;
+}
+.banner.o { background:var(--orange); }
+.banner.outline { background:var(--dark-card); border:2px solid var(--orange); }
+
+.tag {
+  display:inline-block; font-size:.73rem; font-weight:800;
+  text-transform:uppercase; letter-spacing:.06em;
+  padding:.16rem .52rem; border-radius:5px; margin-bottom:.3rem;
+}
+.tag.o{background:var(--orange-lt);color:var(--orange)}
+.tag.b{background:var(--blue-lt);color:var(--blue)}
+.tag.g{background:var(--green-lt);color:var(--green)}
+
+code {
+  font-family:Consolas, Monaco, "Courier New", monospace;
+  font-size:.9em; background:rgba(15,23,42,.06);
+  padding:.1em .38em; border-radius:4px; color:var(--blue);
+  font-weight:600; overflow-wrap:break-word;
+}
+.dark code { background:rgba(255,255,255,.08); color:var(--glow); }
+
+.scroll-x { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+.tbl { width:100%; border-collapse:collapse; font-size:clamp(.79rem,1.45vh + .17vw,1rem); }
+.tbl th {
+  text-align:left; padding:.38rem .5rem; border-bottom:2px solid var(--line);
+  font-weight:800; color:var(--ink); white-space:nowrap;
+}
+.tbl td { padding:.35rem .5rem; border-bottom:1px solid var(--line); color:var(--ink-soft); }
+.tbl tr:last-child td { border-bottom:none; }
+.tbl tbody tr:nth-child(even) { background:var(--light); }
+
+/* ==========================================================================
+   10. NAVIGATION BAR  (touch-friendly, adapts to width)
+   ========================================================================== */
+#bar {
+  position:absolute; bottom:0; left:0;
+  width:100%; height:calc(var(--bar-h) + var(--sa-b));
+  padding:0 calc(var(--pad-x) * .8 + var(--sa-r)) var(--sa-b) calc(var(--pad-x) * .8 + var(--sa-l));
+  background:var(--white); border-top:1px solid var(--line);
+  display:flex; align-items:center; justify-content:space-between;
+  gap:.5rem; z-index:200;
+}
+#bar.dark-bar { background:var(--dark-card); border-top-color:var(--dark-line); }
+
+.bar-left { display:flex; align-items:center; gap:.6rem; min-width:0; flex:1 1 auto; }
+.bar-title {
+  font-size:.85rem; font-weight:700; color:var(--ink-mute);
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+#bar.dark-bar .bar-title { color:var(--paper-mute); }
+
+.count {
+  font-size:.86rem; font-weight:800; color:var(--orange);
+  background:var(--orange-lt); padding:.24rem .62rem;
+  border-radius:40px; white-space:nowrap; flex-shrink:0;
+}
+#bar.dark-bar .count { background:rgba(251,146,60,.16); color:var(--glow); }
+
+.btns { display:flex; gap:.4rem; flex-shrink:0; }
+.nb {
+  min-height:44px; min-width:44px;
+  background:var(--light); border:1px solid var(--line); color:var(--ink);
+  padding:.45rem .9rem; font-size:.88rem; font-weight:700;
+  border-radius:9px; cursor:pointer; transition:all .18s;
+  white-space:nowrap; display:flex; align-items:center; justify-content:center;
+  touch-action:manipulation;
+}
+.nb:hover, .nb:focus-visible {
+  background:var(--orange); color:#fff; border-color:var(--orange); outline:none;
+}
+.nb:disabled { opacity:.32; cursor:not-allowed; }
+.nb:disabled:hover { background:var(--light); color:var(--ink); border-color:var(--line); }
+#bar.dark-bar .nb { background:var(--dark); border-color:var(--dark-line); color:var(--paper); }
+#bar.dark-bar .nb:hover { background:var(--orange); border-color:var(--orange); }
+
+/* Hide labels progressively as width shrinks */
+@media (max-width:860px) { .bar-title { display:none; } }
+@media (max-width:640px) {
+  .nb .lbl { display:none; }
+  .nb { padding:.45rem .7rem; font-size:1rem; }
+}
+@media (max-width:420px) {
+  .nb#btnFull { display:none; }
+}
+
+/* Progress bar */
+#prog-wrap {
+  position:absolute; top:0; left:0; width:100%; height:5px;
+  background:rgba(15,23,42,.08); z-index:210;
+}
+#prog {
+  height:100%; width:0;
+  background:linear-gradient(90deg,var(--orange),var(--glow));
+  transition:width .3s ease;
+}
+
+/* Scroll hint (appears only when slide overflows) */
+#hint {
+  position:absolute; left:50%; transform:translateX(-50%);
+  bottom:calc(var(--bar-h) + var(--sa-b) + .5rem);
+  background:var(--orange); color:#fff;
+  font-size:.72rem; font-weight:800;
+  padding:.25rem .7rem; border-radius:40px;
+  z-index:150; pointer-events:none; opacity:0;
+  transition:opacity .25s;
+}
+#hint.show { opacity:.92; animation:bob 1.4s ease-in-out infinite; }
+@keyframes bob { 0%,100%{transform:translate(-50%,0)} 50%{transform:translate(-50%,4px)} }
+
+/* ==========================================================================
+   11. SLIDE MENU
+   ========================================================================== */
+#menu {
+  position:absolute; inset:0; z-index:300;
+  background:rgba(15,23,42,.97); display:none;
+  flex-direction:column; overflow-y:auto;
+  padding:calc(clamp(.9rem,3.5vh,2.2rem) + var(--sa-t))
+          calc(clamp(.9rem,3.5vw,2.2rem) + var(--sa-r))
+          calc(clamp(.9rem,3.5vh,2.2rem) + var(--sa-b))
+          calc(clamp(.9rem,3.5vw,2.2rem) + var(--sa-l));
+}
+#menu.open { display:flex; }
+.menu-h {
+  color:var(--paper); font-size:1.18rem; font-weight:800;
+  margin-bottom:.9rem; display:flex; justify-content:space-between;
+  align-items:center; gap:.6rem; flex-wrap:wrap;
+}
+.menu-grid {
+  display:grid; gap:.55rem;
+  grid-template-columns:repeat(auto-fill, minmax(min(100%, 13rem), 1fr));
+}
+.mi {
+  background:var(--dark-card); border:1px solid var(--dark-line);
+  border-radius:9px; padding:.6rem .75rem; min-height:44px;
+  color:var(--paper-mute); font-size:.86rem; font-weight:600;
+  cursor:pointer; text-align:left; transition:all .16s;
+  display:flex; gap:.5rem; align-items:center; touch-action:manipulation;
+}
+.mi:hover, .mi:focus-visible { border-color:var(--orange); color:var(--paper); outline:none; }
+.mi.cur { border-color:var(--orange); background:rgba(234,88,12,.17); color:var(--glow); }
+.mi .mn { font-weight:800; color:var(--glow); flex-shrink:0; }
+
+/* ==========================================================================
+   12. COVER SLIDE
+   ========================================================================== */
+.hero-split {
+  display:flex; flex-direction:column; justify-content:center;
+  align-items:flex-start; gap:clamp(.35rem,1.6vh,.9rem);
+  padding-right:clamp(0rem,1.5vw,2.5rem);
+}
+.hero-split .h1 { font-size:clamp(1.75rem, 5vh + 1.1vw, 3.6rem); line-height:1.1; }
+.hero-split .sub { font-size:clamp(.9rem, 1.9vh + .25vw, 1.28rem); max-width:46ch; }
+
+.team-panel {
+  background:var(--dark-card); border:1px solid var(--dark-line);
+  border-radius:var(--radius); padding:clamp(.85rem,2.2vh + .3vw,1.5rem);
+  width:100%;
+}
+.team-title {
+  font-size:1.05rem; font-weight:800; color:var(--glow);
+  text-transform:uppercase; letter-spacing:.07em;
+  margin-bottom:clamp(.5rem,1.6vh,1rem);
+  border-bottom:2px solid var(--dark-line); padding-bottom:.42rem;
+}
+.member {
+  display:flex; align-items:center; gap:.8rem;
+  margin-bottom:clamp(.5rem,1.7vh,.95rem);
+}
+.member:last-child { margin-bottom:0; }
+.avatar {
+  width:2.3rem; height:2.3rem; border-radius:50%; flex-shrink:0;
+  background:linear-gradient(135deg,var(--orange),var(--glow));
+  color:#fff; font-size:.9rem; font-weight:800;
+  display:flex; align-items:center; justify-content:center;
+  box-shadow:0 4px 10px rgba(234,88,12,.28);
+}
+.m-info { display:flex; flex-direction:column; gap:.1rem; min-width:0; }
+.m-name {
+  font-size:clamp(.88rem,1.6vh + .2vw,1.05rem); font-weight:700; color:var(--paper);
+  overflow-wrap:break-word;
+}
+.m-meta { display:flex; align-items:center; gap:.45rem; flex-wrap:wrap; }
+.m-id { font-size:.8rem; font-weight:700; color:var(--glow); font-family:monospace; }
+.m-role { font-size:.78rem; color:var(--paper-mute); }
+
+.kpi { font-size:clamp(1.5rem,3.2vh,2.3rem); font-weight:800; line-height:1; margin-bottom:.28rem; }
+
+/* ==========================================================================
+   13. PRINT  →  clean PDF export (Ctrl+P)
+   ========================================================================== */
+@media print {
+  @page { size:landscape; margin:10mm; }
+  body, #deck { overflow:visible; height:auto; background:#fff; }
+  #bar, #menu, #prog-wrap, #hint { display:none !important; }
+  .slide {
+    position:static !important; display:flex !important;
+    page-break-after:always; break-after:page;
+    height:auto; min-height:170mm; padding:10mm;
+    box-shadow:none; overflow:visible;
+  }
+  .slide.dark { background:#0F172A !important; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  .card { break-inside:avoid; }
+}
+</style>
+</head>
+<body>
+
+<div id="deck">
+  <div id="prog-wrap"><div id="prog"></div></div>
+  <div id="hint">↓ scroll</div>
+
+<!-- ══════════════ SLIDE 1 · COVER ══════════════ -->
+<section class="slide dark active" data-title="Title">
+ <div class="wrap"><div class="body" style="justify-content:center">
+  <div class="grid g-cover">
+    <div class="hero-split">
+      <span class="kicker">Apache Spark Ecosystem</span>
+      <h1 class="h1">GraphX: Graph Processing in Apache Spark</h1>
+      <p class="sub">A simple guide to <strong style="color:var(--glow)">nodes, links, and big network math</strong> — how machines make sense of connected data.</p>
+    </div>
+    <div class="team-panel">
+      <div class="team-title">👥 Group Members</div>
+      <div class="member">
+        <div class="avatar">SB</div>
+        <div class="m-info"><span class="m-name">MD. Shimul Ahmed Bappi</span>
+          <div class="m-meta"><span class="m-id">ID: 837</span><span style="color:var(--dark-line)">•</span><span class="m-role">Presenter</span></div></div>
+      </div>
+      <div class="member">
+        <div class="avatar">TB</div>
+        <div class="m-info"><span class="m-name">Tasnim Islam Bristi</span>
+          <div class="m-meta"><span class="m-id">ID: 837</span><span style="color:var(--dark-line)">•</span><span class="m-role">Presenter</span></div></div>
+      </div>
+      <div class="member">
+        <div class="avatar">SA</div>
+        <div class="m-info"><span class="m-name">Mst. Sarmin Akter</span>
+          <div class="m-meta"><span class="m-id">ID: 852</span><span style="color:var(--dark-line)">•</span><span class="m-role">Presenter</span></div></div>
+      </div>
+    </div>
+  </div>
+ </div></div>
+</section>
+
+<!-- ══════════════ SLIDE 2 · BIG DATA ══════════════ -->
+<section class="slide" data-title="Big Data &amp; Graph Data">
+ <div class="wrap">
+  <div class="head"><span class="kicker">Section 1.1</span>
+    <h2 class="h1">Big Data and Graph Data</h2>
+    <p class="sub">A lot of today's data is not a plain list — it is a web of connected things.</p></div>
+  <div class="body"><div class="grid g-side">
+    <div class="card"><ul class="bul">
+      <li><strong>Big Data</strong> comes from social apps, online shops, transport systems, science labs, and message systems.</li>
+      <li>Much of it is <strong>connected data</strong> — things joined to other things.</li>
+      <li>A <strong>graph</strong> has two parts: <strong>vertices</strong> (the things) and <strong>edges</strong> (the links between them).</li>
+      <li>In a social app, each person is a vertex and each friendship is an edge.</li>
+      <li>Here the <strong>connections matter as much as the things</strong> — that is the big difference from normal tables.</li>
+    </ul></div>
+    <div class="fig optional"><span class="fig-cap">Where graph data comes from</span>
+      <svg class="svgfig" viewBox="0 0 320 250" style="max-width:380px" role="img" aria-label="Sources of graph data">
+        <rect x="95" y="105" width="130" height="40" rx="10" fill="#0F172A"/>
+        <text x="160" y="130" text-anchor="middle" fill="#FB923C" font-size="14" font-weight="700">Graph Data</text>
+        <g font-size="11" font-weight="600">
+          <rect x="8" y="10" width="110" height="30" rx="8" fill="#FFF1E8" stroke="#EA580C"/><text x="63" y="30" text-anchor="middle" fill="#EA580C">Social Networks</text>
+          <rect x="200" y="10" width="110" height="30" rx="8" fill="#EFF6FF" stroke="#2563EB"/><text x="255" y="30" text-anchor="middle" fill="#2563EB">Online Shopping</text>
+          <rect x="0" y="60" width="110" height="30" rx="8" fill="#ECFDF5" stroke="#10B981"/><text x="55" y="80" text-anchor="middle" fill="#10B981">Transport Maps</text>
+          <rect x="210" y="60" width="110" height="30" rx="8" fill="#F5F3FF" stroke="#8B5CF6"/><text x="265" y="80" text-anchor="middle" fill="#8B5CF6">Science Labs</text>
+          <rect x="8" y="200" width="110" height="30" rx="8" fill="#FFFBEB" stroke="#F59E0B"/><text x="63" y="220" text-anchor="middle" fill="#B45309">Messaging Apps</text>
+          <rect x="200" y="200" width="110" height="30" rx="8" fill="#FFF1F2" stroke="#F43F5E"/><text x="255" y="220" text-anchor="middle" fill="#F43F5E">Web &amp; Internet</text>
+        </g>
+        <g stroke="#CBD5E1" stroke-width="2" fill="none">
+          <path d="M63 40 L120 105"/><path d="M255 40 L200 105"/><path d="M55 90 L100 115"/>
+          <path d="M265 90 L222 115"/><path d="M63 200 L120 145"/><path d="M255 200 L200 145"/>
+        </g>
+      </svg></div>
+  </div></div>
+ </div>
+</section>
+
+<!-- ══════════════ SLIDE 3 · WHY GRAPHS ══════════════ -->
+<section class="slide" data-title="Why Graph Processing?">
+ <div class="wrap">
+  <div class="head"><span class="kicker">Section 1.2</span>
+    <h2 class="h1">Why Do We Need Graph Processing?</h2>
+    <p class="sub">Normal tools look at rows one by one. Graph tools look at how rows are joined.</p></div>
+  <div class="body">
+    <div class="grid g2">
+      <div class="card st st-b"><div class="ct"><span class="ico">📊</span> Table Data</div>
+        <p class="cs">Rows and columns</p>
+        <ul class="bul b">
+          <li>Each row <strong>lives alone</strong> and knows nothing about other rows.</li>
+          <li>Good for sales records, sensor readings, and simple logs.</li>
+          <li><strong>Hard to answer:</strong> “Who are the friends of my friends?”</li>
+        </ul></div>
+      <div class="card st st-o"><div class="ct"><span class="ico">🕸️</span> Graph Data</div>
+        <p class="cs">Nodes and links</p>
+        <ul class="bul">
+          <li>Every node <strong>knows its neighbors</strong> directly.</li>
+          <li>Good for finding groups, paths, and important people.</li>
+          <li><strong>Easy to answer:</strong> “Find the shortest road from A to B.”</li>
+        </ul></div>
+    </div>
+    <div class="grid g2">
+      <div class="card tint-r"><div class="ct" style="color:var(--rose)"><span class="ico">🖥️</span> One Computer Is Not Enough</div>
+        <p class="cp">Big networks have <strong>billions</strong> of people and links. One machine cannot hold or process all of that.</p></div>
+      <div class="card tint-g"><div class="ct" style="color:var(--green)"><span class="ico">⚡</span> Split the Work</div>
+        <p class="cp">GraphX divides the graph across <strong>many machines</strong> so all the parts are worked on at the same time.</p></div>
+    </div>
+  </div>
+ </div>
+</section>
+
+<!-- ══════════════ SLIDE 4 · WHAT IS GRAPHX ══════════════ -->
+<section class="slide" data-title="What Is GraphX?">
+ <div class="wrap">
+  <div class="head"><span class="kicker">Section 2.1</span>
+    <h2 class="h1">What Is GraphX?</h2>
+    <p class="sub">Spark's built-in part for graphs and graph-style computing.</p></div>
+  <div class="body"><div class="grid g-side">
+    <div class="card"><ul class="bul">
+      <li><strong>GraphX</strong> is the graph part of Apache Spark. It comes with Spark — no extra install.</li>
+      <li>It adds a <strong>graph model</strong> on top of Spark's normal data engine.</li>
+      <li>The model is a <strong>directed multigraph</strong>: arrows go one way, and two nodes can have <strong>more than one</strong> arrow between them.</li>
+      <li>It gives you four things: graph <strong>operators</strong>, graph <strong>algorithms</strong>, graph <strong>builders</strong>, and the <strong>Pregel</strong> engine.</li>
+    </ul></div>
+    <div class="fig optional"><span class="fig-cap">GraphX sits inside Spark</span>
+      <svg class="svgfig" viewBox="0 0 300 230" style="max-width:340px" role="img" aria-label="GraphX layers">
+        <defs><marker id="a1" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><polygon points="0 0,7 3.5,0 7" fill="#94A3B8"/></marker></defs>
+        <g font-size="13" font-weight="700" text-anchor="middle">
+          <rect x="35" y="8" width="230" height="38" rx="10" fill="#F5F3FF" stroke="#8B5CF6" stroke-width="2"/><text x="150" y="32" fill="#8B5CF6">Apache Spark</text>
+          <rect x="35" y="66" width="230" height="38" rx="10" fill="#EFF6FF" stroke="#2563EB" stroke-width="2"/><text x="150" y="90" fill="#2563EB">Spark RDD</text>
+          <rect x="35" y="124" width="230" height="38" rx="10" fill="#FFF1E8" stroke="#EA580C" stroke-width="2"/><text x="150" y="148" fill="#EA580C">GraphX Graph</text>
+          <rect x="15" y="182" width="270" height="38" rx="10" fill="#ECFDF5" stroke="#10B981" stroke-width="2"/>
+          <text x="150" y="199" fill="#10B981" font-size="11">Vertices + Edges</text><text x="150" y="212" fill="#10B981" font-size="11">+ Properties</text>
+        </g>
+        <g stroke="#94A3B8" stroke-width="2.5" fill="none" marker-end="url(#a1)">
+          <path d="M150 46 L150 62"/><path d="M150 104 L150 120"/><path d="M150 162 L150 178"/></g>
+      </svg></div>
+  </div></div>
+ </div>
+</section>
+
+<!-- ══════════════ SLIDE 5 · GRAPHX + SPARK ══════════════ -->
+<section class="slide" data-title="GraphX + Spark">
+ <div class="wrap">
+  <div class="head"><span class="kicker">Sections 2.2 &amp; 2.3</span>
+    <h2 class="h1">GraphX and Apache Spark</h2>
+    <p class="sub">How the two fit together, and what “graph-parallel” really means.</p></div>
+  <div class="body">
+    <div class="fig optional">
+      <svg class="svgfig" viewBox="0 0 640 110" style="max-width:800px" role="img" aria-label="Data pipeline">
+        <defs><marker id="a2" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><polygon points="0 0,8 4,0 8" fill="#94A3B8"/></marker></defs>
+        <g text-anchor="middle">
+          <circle cx="55" cy="42" r="30" fill="#8B5CF6"/><text x="55" y="50" fill="#fff" font-size="22">💾</text><text x="55" y="95" font-size="13" font-weight="700" fill="#0F172A">Raw Data</text>
+          <circle cx="235" cy="42" r="30" fill="#2563EB"/><text x="235" y="50" fill="#fff" font-size="22">📦</text><text x="235" y="95" font-size="13" font-weight="700" fill="#0F172A">Spark RDD</text>
+          <circle cx="415" cy="42" r="30" fill="#EA580C"/><text x="415" y="50" fill="#fff" font-size="22">🕸️</text><text x="415" y="95" font-size="13" font-weight="700" fill="#0F172A">GraphX Graph</text>
+          <circle cx="585" cy="42" r="30" fill="#10B981"/><text x="585" y="50" fill="#fff" font-size="22">📈</text><text x="585" y="95" font-size="13" font-weight="700" fill="#0F172A">Results</text>
+        </g>
+        <g stroke="#94A3B8" stroke-width="3" fill="none" marker-end="url(#a2)">
+          <path d="M90 42 L198 42"/><path d="M270 42 L378 42"/><path d="M450 42 L548 42"/></g>
+      </svg></div>
+    <div class="grid g3">
+      <div class="card st st-b"><div class="ct">Runs Inside Spark</div>
+        <p class="cp">Uses the same workers and memory Spark already manages. You can mix normal data work and graph work in one program.</p></div>
+      <div class="card st st-o"><div class="ct">Safe and Self-Healing</div>
+        <p class="cp">Graphs cannot be edited in place. A <strong>new graph</strong> is made and unchanged parts are reused. If a machine dies, Spark rebuilds the lost piece.</p></div>
+      <div class="card st st-g"><div class="ct">Graph-Parallel Work</div>
+        <p class="cp">Instead of treating each record alone, a node can use <strong>information from its neighbors</strong> to update itself.</p></div>
+    </div>
+  </div>
+ </div>
+</section>
+
+<!-- ══════════════ SLIDE 6 · GETTING STARTED ══════════════ -->
+<section class="slide" data-title="Getting Started">
+ <div class="wrap">
+  <div class="head"><span class="kicker">Section 3</span>
+    <h2 class="h1">Getting Started with GraphX</h2>
+    <p class="sub">The normal seven steps of a GraphX program.</p></div>
+  <div class="body"><div class="grid g2">
+    <div class="card st st-o"><div class="ct"><span class="ico">📋</span> The Workflow</div>
+      <ol class="num">
+        <li><strong>Start</strong> the Spark environment.</li>
+        <li><strong>Get</strong> or create your graph data.</li>
+        <li><strong>Make</strong> vertices and edges as distributed lists.</li>
+        <li><strong>Build</strong> the GraphX graph object.</li>
+        <li><strong>Attach</strong> properties to nodes and links.</li>
+        <li><strong>Run</strong> graph operators or algorithms.</li>
+        <li><strong>Read</strong> and study the results.</li>
+      </ol></div>
+    <div class="card st st-b"><div class="ct"><span class="ico">📂</span> Where Data Comes From</div>
+      <ul class="bul b">
+        <li><strong>RDDs</strong> — Spark's basic distributed lists of data.</li>
+        <li><strong>Text files</strong> — edge lists, where <code>1 2</code> means “node 1 links to node 2”.</li>
+        <li><strong>Existing data</strong> — any table or file you already have.</li>
+        <li><strong>Graph generators</strong> — fake graphs (grids, stars, random) for testing.</li>
+      </ul>
+      <div class="banner" style="margin-top:.7rem">Raw Data → Vertices &amp; Edges → Graph → Processing</div></div>
+  </div></div>
+ </div>
+</section>
+
+<!-- ══════════════ SLIDE 7 · PROPERTY GRAPH ══════════════ -->
+<section class="slide" data-title="The Property Graph">
+ <div class="wrap">
+  <div class="head"><span class="kicker">Section 4.1</span>
+    <h2 class="h1">The Property Graph</h2>
+    <p class="sub">The most important idea in GraphX — a graph where everything can carry extra information.</p></div>
+  <div class="body">
+    <div class="grid g-side">
+      <div class="card"><ul class="bul">
+        <li>A <strong>property graph</strong> is a directed multigraph where user data is attached to every node and every link.</li>
+        <li><strong>Directed</strong> = the arrow points one way.</li>
+        <li><strong>Multigraph</strong> = two nodes can have <strong>several links</strong>. Two people can be friends <em>and</em> co-workers.</li>
+        <li>Each node has a <strong>unique 64-bit ID</strong> called a <code>VertexId</code>.</li>
+        <li>Two type slots: <code>VD</code> = vertex data, <code>ED</code> = edge data.</li>
+      </ul></div>
+      <div class="fig optional"><span class="fig-cap">Two people, two different links</span>
+        <svg class="svgfig" viewBox="0 0 320 170" style="max-width:400px" role="img" aria-label="Multigraph">
+          <defs><marker id="a3" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><polygon points="0 0,8 4,0 8" fill="#64748B"/></marker></defs>
+          <path d="M85 60 Q160 15 235 60" stroke="#EA580C" stroke-width="2.5" fill="none" marker-end="url(#a3)"/>
+          <path d="M85 100 Q160 145 235 100" stroke="#2563EB" stroke-width="2.5" fill="none" marker-end="url(#a3)"/>
+          <rect x="105" y="22" width="80" height="20" rx="5" fill="#FFF1E8" stroke="#EA580C"/><text x="145" y="36" text-anchor="middle" font-size="11" font-weight="700" fill="#EA580C">friends</text>
+          <rect x="105" y="128" width="88" height="20" rx="5" fill="#EFF6FF" stroke="#2563EB"/><text x="149" y="142" text-anchor="middle" font-size="11" font-weight="700" fill="#2563EB">co-workers</text>
+          <circle cx="55" cy="80" r="34" fill="#DBEAFE" stroke="#2563EB" stroke-width="3"/><text x="55" y="77" text-anchor="middle" font-size="18">👩</text><text x="55" y="95" text-anchor="middle" font-size="11" font-weight="700" fill="#1E40AF">Alice</text>
+          <circle cx="265" cy="80" r="34" fill="#FFEDD5" stroke="#EA580C" stroke-width="3"/><text x="265" y="77" text-anchor="middle" font-size="18">👨</text><text x="265" y="95" text-anchor="middle" font-size="11" font-weight="700" fill="#9A3412">Bob</text>
+        </svg></div>
+    </div>
+    <div class="banner o">Graph = Vertices + Edges + Vertex Properties + Edge Properties</div>
+  </div>
+ </div>
+</section>
+
+<!-- ══════════════ SLIDE 8 · VERTICES / EDGES / PROPS ══════════════ -->
+<section class="slide" data-title="Vertices, Edges, Properties">
+ <div class="wrap">
+  <div class="head"><span class="kicker">Sections 4.2 – 4.4</span>
+    <h2 class="h1">Vertices, Edges, and Properties</h2>
+    <p class="sub">The three building blocks of every property graph.</p></div>
+  <div class="body"><div class="grid g3">
+    <div class="card st st-o"><div class="ct"><span class="ico">🟠</span> Vertices</div>
+      <p class="cp" style="margin-bottom:.45rem">A vertex is <strong>one thing</strong>: a person, product, webpage, or city.</p>
+      <div class="scroll-x"><table class="tbl">
+        <thead><tr><th>ID</th><th>Name</th><th>Job</th></tr></thead>
+        <tbody><tr><td>3</td><td>rxin</td><td>Student</td></tr><tr><td>7</td><td>jgonzal</td><td>Postdoc</td></tr>
+        <tr><td>5</td><td>franklin</td><td>Professor</td></tr><tr><td>2</td><td>istoica</td><td>Professor</td></tr></tbody>
+      </table></div></div>
+    <div class="card st st-b"><div class="ct"><span class="ico">➡️</span> Edges</div>
+      <p class="cp" style="margin-bottom:.45rem">An edge is a <strong>link</strong> from a source node to a target node.</p>
+      <div class="scroll-x"><table class="tbl">
+        <thead><tr><th>From</th><th>To</th><th>Link</th></tr></thead>
+        <tbody><tr><td>3</td><td>7</td><td>Collaborator</td></tr><tr><td>5</td><td>3</td><td>Advisor</td></tr>
+        <tr><td>2</td><td>5</td><td>Colleague</td></tr><tr><td>5</td><td>7</td><td>PI</td></tr></tbody>
+      </table></div></div>
+    <div class="card st st-g"><div class="ct"><span class="ico">🏷️</span> Properties</div>
+      <p class="cp"><strong style="color:var(--green)">Vertex:</strong> Name, Age, Occupation, Location</p>
+      <p class="cp" style="margin-top:.35rem"><strong style="color:var(--green)">Edge:</strong> Friendship, Follower link, Collaboration, Chat frequency</p>
+      <p class="cp" style="margin-top:.35rem">Properties are what make a graph <strong>informative</strong>, not just a picture of lines.</p></div>
+  </div></div>
+ </div>
+</section>
+
+<!-- ══════════════ SLIDE 9 · RDD STRUCTURES ══════════════ -->
+<section class="slide" data-title="VertexRDD, EdgeRDD, Triplet">
+ <div class="wrap">
+  <div class="head"><span class="kicker">Sections 4.5 – 4.7</span>
+    <h2 class="h1">VertexRDD, EdgeRDD, and EdgeTriplet</h2>
+    <p class="sub">How GraphX actually stores and views your graph inside.</p></div>
+  <div class="body"><div class="grid g3">
+    <div class="card st st-o"><span class="tag o">Node Storage</span><div class="ct">VertexRDD</div>
+      <ul class="bul"><li>Holds <strong>node ID + node data</strong>.</li><li>Each ID appears <strong>only once</strong>.</li>
+      <li>A hidden <strong>index</strong> makes joins much faster.</li></ul>
+      <div class="banner" style="margin-top:.55rem;font-size:.8rem">VertexRDD = ID + Attribute</div></div>
+    <div class="card st st-b"><span class="tag b">Link Storage</span><div class="ct">EdgeRDD</div>
+      <ul class="bul b"><li>Holds every link in the graph.</li><li>Organised by the <strong>partition plan</strong>.</li>
+      <li>Data and shape stored <strong>separately</strong> for speed.</li></ul>
+      <div class="banner" style="margin-top:.55rem;font-size:.8rem">EdgeRDD = Src + Dst + Attribute</div></div>
+    <div class="card st st-g"><span class="tag g">Combined View</span><div class="ct">EdgeTriplet</div>
+      <ul class="bul g"><li>Joins <strong>source + link + target</strong> into one packet.</li><li>Shows both ends plus the relationship.</li>
+      <li>Essential for Pregel message passing.</li></ul>
+      <div class="banner" style="margin-top:.55rem;font-size:.8rem">Src + Edge + Dst Attributes</div></div>
+  </div></div>
+ </div>
+</section>
+
+<!-- ══════════════ SLIDE 10 · OPERATORS ══════════════ -->
+<section class="slide" data-title="Graph Operators">
+ <div class="wrap">
+  <div class="head"><span class="kicker">Sections 5.1 – 5.3</span>
+    <h2 class="h1">Graph Operators</h2>
+    <p class="sub">Change properties, reshape the graph, or pull in outside data.</p></div>
+  <div class="body"><div class="grid g3">
+    <div class="card st st-b"><div class="ct"><span class="ico">🎨</span> Property Operators</div><p class="cs">Change data, keep the shape</p>
+      <ul class="bul b"><li><code>mapVertices</code> — change every node's data.</li><li><code>mapEdges</code> — change every link's data.</li>
+      <li><code>mapTriplets</code> — change link data using <strong>both</strong> ends.</li>
+      <li>Shape stays the same → index reused → <strong>fast</strong>.</li></ul></div>
+    <div class="card st st-o"><div class="ct"><span class="ico">✂️</span> Structural Operators</div><p class="cs">Reshape the graph itself</p>
+      <ul class="bul"><li><code>subgraph</code> — keep only parts that pass a test.</li><li><code>reverse</code> — flip all arrows.</li>
+      <li><code>mask</code> — keep only parts in another graph too.</li><li><code>groupEdges</code> — merge duplicate links.</li></ul></div>
+    <div class="card st st-p"><div class="ct"><span class="ico">🤝</span> Join Operators</div><p class="cs">Bring in outside facts</p>
+      <ul class="bul p"><li><code>joinVertices</code> — match outside data by node ID.</li>
+      <li><code>outerJoinVertices</code> — keeps unmatched nodes too.</li></ul>
+      <div class="banner" style="background:var(--purple);margin-top:.6rem">Graph + External Data → Richer Graph</div></div>
+  </div></div>
+ </div>
+</section>
+
+<!-- ══════════════ SLIDE 11 · AGGREGATION ══════════════ -->
+<section class="slide" data-title="Neighborhood Aggregation">
+ <div class="wrap">
+  <div class="head"><span class="kicker">Section 5.4</span>
+    <h2 class="h1">Neighborhood Aggregation</h2>
+    <p class="sub">Collect information from the nodes sitting next to you.</p></div>
+  <div class="body">
+    <div class="grid g-side">
+      <div class="card"><div class="ct"><span class="ico">📬</span> How <code>aggregateMessages</code> Works</div>
+        <ol class="num b">
+          <li>Look at each <strong>edge triplet</strong> in the graph.</li>
+          <li><strong>Send a message</strong> along that link.</li>
+          <li><strong>Combine</strong> all messages arriving at the same node.</li>
+          <li>Use the combined value to <strong>update</strong> that node.</li>
+        </ol>
+        <p class="cp" style="margin-top:.6rem"><strong>Example:</strong> “Add up the ages of all my friends.” Sending small messages is far cheaper than copying whole neighbor lists.</p></div>
+      <div class="fig optional"><span class="fig-cap">Three neighbors send notes to node X</span>
+        <svg class="svgfig" viewBox="0 0 300 230" style="max-width:340px" role="img" aria-label="Message aggregation">
+          <defs><marker id="a5" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><polygon points="0 0,8 4,0 8" fill="#64748B"/></marker></defs>
+          <g stroke-width="2.5" fill="none" stroke-dasharray="6 4" marker-end="url(#a5)">
+            <path d="M62 52 L120 100" stroke="#2563EB"/><path d="M238 52 L180 100" stroke="#10B981"/><path d="M62 178 L120 130" stroke="#8B5CF6"/></g>
+          <g font-size="10" font-weight="700"><text x="72" y="82" fill="#2563EB">msg</text><text x="208" y="82" fill="#10B981">msg</text><text x="72" y="158" fill="#8B5CF6">msg</text></g>
+          <circle cx="45" cy="40" r="26" fill="#DBEAFE" stroke="#2563EB" stroke-width="3"/><text x="45" y="47" text-anchor="middle" font-size="14" font-weight="800" fill="#1E40AF">A</text>
+          <circle cx="255" cy="40" r="26" fill="#D1FAE5" stroke="#10B981" stroke-width="3"/><text x="255" y="47" text-anchor="middle" font-size="14" font-weight="800" fill="#065F46">B</text>
+          <circle cx="45" cy="190" r="26" fill="#EDE9FE" stroke="#8B5CF6" stroke-width="3"/><text x="45" y="197" text-anchor="middle" font-size="14" font-weight="800" fill="#5B21B6">C</text>
+          <circle cx="150" cy="115" r="34" fill="#FFEDD5" stroke="#EA580C" stroke-width="3.5"/><text x="150" y="123" text-anchor="middle" font-size="18" font-weight="800" fill="#9A3412">X</text>
+          <text x="150" y="182" text-anchor="middle" font-size="11" font-weight="700" fill="#EA580C">X merges all messages</text>
+        </svg></div>
+    </div>
+    <div class="banner o">Edge Triplets → Send Messages → Combine at Node → Update Node</div>
+  </div>
+ </div>
+</section>
+
+<!-- ══════════════ SLIDE 12 · PREGEL ══════════════ -->
+<section class="slide" data-title="Pregel API">
+ <div class="wrap">
+  <div class="head"><span class="kicker">Section 6</span>
+    <h2 class="h1">The Pregel API — Round by Round</h2>
+    <p class="sub">Like people passing notes in a classroom, one round at a time.</p></div>
+  <div class="body"><div class="grid g2">
+    <div class="card st st-p"><div class="ct"><span class="ico">🔄</span> One Round (a “Superstep”)</div>
+      <ol class="num p">
+        <li>Nodes <strong>receive</strong> messages from the last round.</li>
+        <li>Each node <strong>updates</strong> its own value.</li>
+        <li>New messages are <strong>created</strong>.</li>
+        <li>Messages go to <strong>neighbors only</strong>.</li>
+        <li>Repeat until <strong>no messages remain</strong> or the round limit is reached.</li>
+      </ol>
+      <p class="cp" style="margin-top:.55rem">Because notes travel only between neighbors, GraphX can plan the work very efficiently.</p></div>
+    <div class="card st st-o"><div class="ct"><span class="ico">🗺️</span> Example: Shortest Path (SSSP)</div>
+      <ul class="bul">
+        <li>Pick a <strong>start node</strong>. It gets distance <strong>0</strong>.</li>
+        <li>All other nodes start at <strong>infinity</strong>.</li>
+        <li>Each round, nodes tell neighbors how far away they are.</li>
+        <li>A node <strong>updates only if it hears a shorter distance</strong>.</li>
+        <li>When nobody finds a shorter path, the job is finished.</li>
+      </ul>
+      <div class="fig optional" style="margin-top:.55rem">
+        <svg class="svgfig" viewBox="0 0 340 70" style="max-width:400px" role="img" aria-label="SSSP chain">
+          <defs><marker id="a6" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><polygon points="0 0,8 4,0 8" fill="#94A3B8"/></marker></defs>
+          <g stroke="#94A3B8" stroke-width="2.5" marker-end="url(#a6)">
+            <line x1="58" y1="35" x2="86" y2="35"/><line x1="142" y1="35" x2="170" y2="35"/><line x1="226" y1="35" x2="254" y2="35"/></g>
+          <circle cx="30" cy="35" r="26" fill="#FFEDD5" stroke="#EA580C" stroke-width="3"/><text x="30" y="41" text-anchor="middle" font-size="13" font-weight="800" fill="#9A3412">A:0</text>
+          <circle cx="114" cy="35" r="26" fill="#DBEAFE" stroke="#2563EB" stroke-width="3"/><text x="114" y="41" text-anchor="middle" font-size="13" font-weight="800" fill="#1E40AF">B:1</text>
+          <circle cx="198" cy="35" r="26" fill="#D1FAE5" stroke="#10B981" stroke-width="3"/><text x="198" y="41" text-anchor="middle" font-size="13" font-weight="800" fill="#065F46">C:2</text>
+          <circle cx="282" cy="35" r="26" fill="#EDE9FE" stroke="#8B5CF6" stroke-width="3"/><text x="282" y="41" text-anchor="middle" font-size="13" font-weight="800" fill="#5B21B6">D:3</text>
+        </svg></div></div>
+  </div></div>
+ </div>
+</section>
+
+<!-- ══════════════ SLIDE 13 · PAGERANK & CC ══════════════ -->
+<section class="slide" data-title="PageRank &amp; Connected Components">
+ <div class="wrap">
+  <div class="head"><span class="kicker">Sections 7.1 &amp; 7.2</span>
+    <h2 class="h1">PageRank and Connected Components</h2>
+    <p class="sub">Two of the most-used ready-made algorithms in GraphX.</p></div>
+  <div class="body"><div class="grid g2">
+    <div class="card st st-o"><div class="ct"><span class="ico">⭐</span> PageRank</div><p class="cs">Who is the most important?</p>
+      <ul class="bul">
+        <li>A node becomes important when <strong>other important nodes point to it</strong>.</li>
+        <li><strong>Static</strong> — runs a fixed number of rounds.</li>
+        <li><strong>Dynamic</strong> — runs until the scores settle within a tolerance.</li>
+        <li><strong>Used for:</strong> web ranking, influencers, recommendations, citation networks.</li>
+      </ul></div>
+    <div class="card st st-b"><div class="ct"><span class="ico">🏘️</span> Connected Components</div><p class="cs">Which groups are separate islands?</p>
+      <ul class="bul b">
+        <li>Finds groups where everyone can reach each other.</li>
+        <li>Each group is labelled with its <strong>lowest node ID</strong>.</li>
+        <li>Example: <code>A—B—C</code> is one group, <code>D—E</code> is another.</li>
+        <li><strong>Used for:</strong> friend clusters, network splitting, isolated systems.</li>
+      </ul></div>
+  </div></div>
+ </div>
+</section>
+
+<!-- ══════════════ SLIDE 14 · TRIANGLES & SCC ══════════════ -->
+<section class="slide" data-title="Triangle Count &amp; SCC">
+ <div class="wrap">
+  <div class="head"><span class="kicker">Sections 7.3 &amp; 7.4</span>
+    <h2 class="h1">Triangle Counting and Strongly Connected Components</h2>
+    <p class="sub">Two more built-in algorithms for studying network shape.</p></div>
+  <div class="body"><div class="grid g2">
+    <div class="card st st-g"><div class="ct"><span class="ico">🔺</span> Triangle Counting</div><p class="cs">How tightly knit is the group?</p>
+      <ul class="bul g">
+        <li>A <strong>triangle</strong> is three nodes all connected to each other.</li>
+        <li>More triangles = a tighter, more trusting community.</li>
+        <li>Edges must be in <strong>canonical order</strong> (smaller ID first) and the graph properly partitioned.</li>
+        <li><strong>Used for:</strong> community detection, spam checking, local clustering.</li>
+      </ul></div>
+    <div class="card st st-p"><div class="ct"><span class="ico">🔁</span> Strongly Connected Components</div><p class="cs">Who can reach everyone and get back?</p>
+      <ul class="bul p">
+        <li>A group in a <strong>directed</strong> graph where every node can reach every other node.</li>
+        <li>Finds <strong>loops and cycles</strong> in one-way networks.</li>
+        <li>Example: <code>A → B → C → A</code>.</li>
+        <li><strong>Used for:</strong> web links, dependency analysis, supply chains, telecom routing.</li>
+      </ul></div>
+  </div></div>
+ </div>
+</section>
+
+<!-- ══════════════ SLIDE 15 · BUILDERS & VERTEX-CUT ══════════════ -->
+<section class="slide" data-title="Builders &amp; Vertex-Cut">
+ <div class="wrap">
+  <div class="head"><span class="kicker">Section 8</span>
+    <h2 class="h1">Graph Builders and Vertex-Cut Partitioning</h2>
+    <p class="sub">How graphs are created, and how they are split across machines.</p></div>
+  <div class="body">
+    <div class="grid g2">
+      <div class="card st st-b"><div class="ct"><span class="ico">🔨</span> Ways to Build a Graph</div>
+        <ul class="bul b">
+          <li>From a <strong>vertex RDD and an edge RDD</strong>.</li>
+          <li>From an <strong>edge list file</strong> — the loader auto-creates any missing nodes.</li>
+          <li>From <strong>edges only</strong>, when there is no separate node data.</li>
+          <li>From <strong>graph generators</strong> for testing.</li>
+        </ul></div>
+      <div class="card st st-o"><div class="ct"><span class="ico">✂️</span> Vertex-Cut Partitioning</div>
+        <ul class="bul">
+          <li><strong>Problem:</strong> one very popular node with millions of links overloads a single machine.</li>
+          <li><strong>Solution:</strong> spread <strong>edges evenly</strong> and let the busy vertex sit on several machines as lightweight mirrors.</li>
+          <li>Cuts down network traffic and storage waste.</li>
+          <li>Pick the <strong>partition strategy</strong> that fits your graph.</li>
+        </ul></div>
+    </div>
+    <div class="fig optional">
+      <svg class="svgfig" viewBox="0 0 560 120" style="max-width:680px" role="img" aria-label="Vertex cut">
+        <defs><marker id="a8" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><polygon points="0 0,8 4,0 8" fill="#94A3B8"/></marker></defs>
+        <rect x="170" y="8" width="220" height="34" rx="9" fill="#FFEDD5" stroke="#EA580C" stroke-width="2.5"/>
+        <text x="280" y="30" text-anchor="middle" font-size="13" font-weight="800" fill="#9A3412">Popular Node · 10M links</text>
+        <g stroke="#94A3B8" stroke-width="2.5" fill="none" marker-end="url(#a8)">
+          <path d="M240 46 L135 72"/><path d="M280 46 L280 72"/><path d="M320 46 L425 72"/></g>
+        <g font-size="11.5" font-weight="700" text-anchor="middle">
+          <rect x="25" y="78" width="200" height="32" rx="8" fill="#EFF6FF" stroke="#2563EB" stroke-width="2"/><text x="125" y="99" fill="#1E40AF">Machine 1 · mirror + 3.3M</text>
+          <rect x="185" y="78" width="190" height="32" rx="8" fill="#ECFDF5" stroke="#10B981" stroke-width="2"/><text x="280" y="99" fill="#065F46">Machine 2 · mirror + 3.3M</text>
+          <rect x="335" y="78" width="200" height="32" rx="8" fill="#F5F3FF" stroke="#8B5CF6" stroke-width="2"/><text x="435" y="99" fill="#5B21B6">Machine 3 · mirror + 3.3M</text>
+        </g>
+      </svg>
+      <span class="fig-cap" style="color:var(--orange)">No single machine gets overloaded</span></div>
+  </div>
+ </div>
+</section>
+
+<!-- ══════════════ SLIDE 16 · APPLICATIONS ══════════════ -->
+<section class="slide" data-title="Applications">
+ <div class="wrap">
+  <div class="head"><span class="kicker">Section 9</span>
+    <h2 class="h1">Where GraphX Is Used</h2>
+    <p class="sub">Anywhere the relationships between things carry real meaning.</p></div>
+  <div class="body"><div class="grid g6">
+    <div class="card st st-o"><div class="ct"><span class="ico">👥</span> Social Networks</div>
+      <p class="cp">Users are nodes, friendships are links. Find influencers, spot communities, count triangles, rank users.</p></div>
+    <div class="card st st-b"><div class="ct"><span class="ico">🛒</span> Recommendations</div>
+      <p class="cp">Customers and products are nodes; buying and viewing are links. Suggests the right item to the right person.</p></div>
+    <div class="card st st-g"><div class="ct"><span class="ico">🌐</span> Web Analysis</div>
+      <p class="cp">Webpages are nodes and hyperlinks are directed edges. PageRank measures how important each page is.</p></div>
+    <div class="card st st-p"><div class="ct"><span class="ico">🚌</span> Transport Networks</div>
+      <p class="cp">Cities and stations are nodes; roads, rails, and routes are links. Good for connectivity and path questions.</p></div>
+    <div class="card st st-a"><div class="ct"><span class="ico">📚</span> Academic Networks</div>
+      <p class="cp">Researchers and papers are nodes; citations and joint work are links. Shows collaboration patterns.</p></div>
+    <div class="card st st-t"><div class="ct"><span class="ico">📡</span> Communication</div>
+      <p class="cp">Devices and users are nodes; calls and data links are edges. Reveals network shape and connected groups.</p></div>
+  </div></div>
+ </div>
+</section>
+
+<!-- ══════════════ SLIDE 17 · PROS & CONS ══════════════ -->
+<section class="slide" data-title="Advantages &amp; Limitations">
+ <div class="wrap">
+  <div class="head"><span class="kicker">Section 10</span>
+    <h2 class="h1">Advantages and Limitations</h2>
+    <p class="sub">An honest look at what GraphX does well and where it struggles.</p></div>
+  <div class="body"><div class="grid g2">
+    <div class="card st st-g"><div class="ct" style="color:var(--green)"><span class="ico">👍</span> Advantages</div>
+      <ul class="bul g">
+        <li><strong>Distributed processing</strong> — big graphs run across many machines.</li>
+        <li><strong>Built into Spark</strong> — no separate graph database needed.</li>
+        <li><strong>Property graph model</strong> — nodes and links both carry real data.</li>
+        <li><strong>Ready-made algorithms</strong> — PageRank, components, triangles.</li>
+        <li><strong>Flexible operators</strong> — property, structural, join, aggregation.</li>
+        <li><strong>Fault tolerance</strong> — lost partitions are rebuilt automatically.</li>
+        <li><strong>Efficient storage</strong> — vertex-cut for very large graphs.</li>
+      </ul></div>
+    <div class="card st st-a"><div class="ct" style="color:var(--amber-dk)"><span class="ico">⚠️</span> Limitations</div>
+      <ul class="bul a">
+        <li><strong>Harder to design</strong> — graph algorithms are trickier than plain data jobs.</li>
+        <li><strong>Memory hungry</strong> — structures, partitions, and mid-results all need space.</li>
+        <li><strong>Network traffic</strong> — machines talk a lot across partitions.</li>
+        <li><strong>Many iterations</strong> — repeated rounds cost time and resources.</li>
+        <li><strong>Partitioning matters</strong> — a poor split slows everything down.</li>
+        <li><strong>Learning curve</strong> — VertexRDD, triplets, and Pregel take time to learn.</li>
+      </ul></div>
+  </div></div>
+ </div>
+</section>
+
+<!-- ══════════════ SLIDE 18 · CONCLUSION ══════════════ -->
+<section class="slide dark" data-title="Conclusion">
+ <div class="wrap">
+  <div class="head" style="text-align:center"><span class="kicker">Sections 11 &amp; 12</span>
+    <h2 class="h1">Conclusion</h2>
+    <p class="sub" style="margin:.28rem auto 0">Three ideas to carry away from this presentation.</p></div>
+  <div class="body">
+    <div class="grid g3">
+      <div class="card"><div class="kpi" style="color:var(--glow)">01</div>
+        <div class="ct" style="color:var(--paper)">One Platform</div>
+        <p class="cp">GraphX is part of Apache Spark. Load, clean, build a graph, run algorithms, and save results — all in one pipeline.</p></div>
+      <div class="card"><div class="kpi" style="color:var(--glow)">02</div>
+        <div class="ct" style="color:var(--paper)">Built for Scale</div>
+        <p class="cp">Pregel messaging and vertex-cut partitioning handle graphs with millions or billions of edges across a cluster.</p></div>
+      <div class="card"><div class="kpi" style="color:var(--glow)">03</div>
+        <div class="ct" style="color:var(--paper)">Real Value</div>
+        <p class="cp">Social networks, recommendations, web analysis, transport, research, and communication — patterns tables cannot show.</p></div>
+    </div>
+    <div class="banner outline">GraphX turns Apache Spark into a full engine for understanding connections at any scale.</div>
+    <div class="card">
+      <div class="ct" style="color:var(--glow);font-size:.95rem"><span class="ico">📚</span> References</div>
+      <p class="cp" style="font-size:.82rem;line-height:1.7">
+        1. Apache Spark (2026). <em>GraphX Programming Guide</em>. Apache Spark Documentation.<br>
+        2. Apache Spark (2026). <em>GraphX API Documentation</em>. Apache Spark Documentation.<br>
+        3. Apache Spark (2026). <em>Apache Spark Documentation</em>. Apache Software Foundation.
+      </p></div>
+  </div>
+ </div>
+</section>
+
+  <!-- ══════════════ NAV BAR ══════════════ -->
+  <div id="bar">
+    <div class="bar-left">
+      <span class="count"><span id="cur">1</span>/<span id="tot">18</span></span>
+      <span class="bar-title" id="stitle">Title</span>
+    </div>
+    <div class="btns">
+      <button class="nb" id="btnFull" title="Fullscreen (F)" aria-label="Toggle fullscreen">⛶<span class="lbl"></span></button>
+      <button class="nb" id="btnMenu" title="Slide menu (M)" aria-label="Open slide menu">☰<span class="lbl"> Menu</span></button>
+      <button class="nb" id="btnPrev" title="Previous (←)" aria-label="Previous slide">◀<span class="lbl"> Prev</span></button>
+      <button class="nb" id="btnNext" title="Next (→)" aria-label="Next slide"><span class="lbl">Next </span>▶</button>
+    </div>
+  </div>
+
+  <!-- ══════════════ MENU ══════════════ -->
+  <div id="menu" role="dialog" aria-label="Slide menu">
+    <div class="menu-h">
+      <span>Jump to a slide</span>
+      <button class="nb" id="btnClose" style="background:#1E293B;border-color:#334155;color:#F8FAFC">✕ Close</button>
+    </div>
+    <div class="menu-grid" id="menuGrid"></div>
+  </div>
+
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  const slides   = Array.from(document.querySelectorAll('.slide'));
+  const total    = slides.length;
+  let   idx      = 0;
+
+  const bar      = document.getElementById('bar');
+  const curEl    = document.getElementById('cur');
+  const totEl    = document.getElementById('tot');
+  const titleEl  = document.getElementById('stitle');
+  const progEl   = document.getElementById('prog');
+  const hintEl   = document.getElementById('hint');
+  const menu     = document.getElementById('menu');
+  const menuGrid = document.getElementById('menuGrid');
+  const btnPrev  = document.getElementById('btnPrev');
+  const btnNext  = document.getElementById('btnNext');
+
+  totEl.textContent = total;
+
+  /* ---------- Build jump menu ---------- */
+  slides.forEach((s, i) => {
+    const b = document.createElement('button');
+    b.className = 'mi';
+    b.innerHTML = `<span class="mn">${String(i+1).padStart(2,'0')}</span><span>${s.dataset.title || 'Slide'}</span>`;
+    b.addEventListener('click', () => { go(i); closeMenu(); });
+    menuGrid.appendChild(b);
+  });
+  const menuItems = Array.from(menuGrid.children);
+
+  /* ---------- Overflow / scroll hint ---------- */
+  function checkOverflow() {
+    const cur = slides[idx];
+    const over = cur.scrollHeight > cur.clientHeight + 8;
+    hintEl.classList.toggle('show', over && cur.scrollTop < 10);
+  }
+
+  /* ---------- Render ---------- */
+  function render() {
+    slides.forEach((s, i) => s.classList.toggle('active', i === idx));
+    const cur = slides[idx];
+
+    bar.classList.toggle('dark-bar', cur.classList.contains('dark'));
+    curEl.textContent   = idx + 1;
+    titleEl.textContent = cur.dataset.title || '';
+    progEl.style.width  = (((idx + 1) / total) * 100) + '%';
+
+    btnPrev.disabled = (idx === 0);
+    btnNext.disabled = (idx === total - 1);
+
+    menuItems.forEach((m, i) => m.classList.toggle('cur', i === idx));
+
+    cur.scrollTop = 0;
+    requestAnimationFrame(checkOverflow);
+  }
+
+  function go(n){ idx = Math.max(0, Math.min(total-1, n)); render(); }
+  function next(){ go(idx+1); }
+  function prev(){ go(idx-1); }
+  function openMenu(){ menu.classList.add('open'); }
+  function closeMenu(){ menu.classList.remove('open'); }
+
+  /* ---------- Fullscreen ---------- */
+  function toggleFull() {
+    const el = document.documentElement;
+    if (!document.fullscreenElement) {
+      (el.requestFullscreen || el.webkitRequestFullscreen || function(){}).call(el);
+    } else {
+      (document.exitFullscreen || document.webkitExitFullscreen || function(){}).call(document);
+    }
+  }
+
+  /* ---------- Buttons ---------- */
+  btnNext.addEventListener('click', next);
+  btnPrev.addEventListener('click', prev);
+  document.getElementById('btnMenu').addEventListener('click', openMenu);
+  document.getElementById('btnClose').addEventListener('click', closeMenu);
+  document.getElementById('btnFull').addEventListener('click', toggleFull);
+
+  /* ---------- Keyboard ---------- */
+  document.addEventListener('keydown', e => {
+    if (menu.classList.contains('open')) {
+      if (e.key === 'Escape' || e.key.toLowerCase() === 'm') closeMenu();
+      return;
+    }
+    switch (e.key) {
+      case 'ArrowRight': case 'PageDown': case ' ':
+        e.preventDefault(); next(); break;
+      case 'ArrowLeft': case 'PageUp':
+        e.preventDefault(); prev(); break;
+      case 'Home': e.preventDefault(); go(0); break;
+      case 'End':  e.preventDefault(); go(total-1); break;
+      case 'm': case 'M': e.preventDefault(); openMenu(); break;
+      case 'f': case 'F': e.preventDefault(); toggleFull(); break;
+    }
+  });
+
+  /* ---------- Touch swipe (ignores vertical scrolling) ---------- */
+  let tx=0, ty=0, tt=0;
+  document.addEventListener('touchstart', e => {
+    tx = e.changedTouches[0].clientX;
+    ty = e.changedTouches[0].clientY;
+    tt = Date.now();
+  }, {passive:true});
+
+  document.addEventListener('touchend', e => {
+    if (menu.classList.contains('open')) return;
+    const dx = e.changedTouches[0].clientX - tx;
+    const dy = e.changedTouches[0].clientY - ty;
+    const dt = Date.now() - tt;
+    if (dt < 700 && Math.abs(dx) > 55 && Math.abs(dx) > Math.abs(dy) * 1.8) {
+      dx < 0 ? next() : prev();
+    }
+  }, {passive:true});
+
+  /* ---------- Edge-click zones (desktop only) ---------- */
+  document.getElementById('deck').addEventListener('click', e => {
+    if (window.innerWidth < 820) return;
+    if (e.target.closest('#bar, #menu, button, a, table, .scroll-x')) return;
+    const x = e.clientX / window.innerWidth;
+    if (x > 0.93) next(); else if (x < 0.07) prev();
+  });
+
+  /* ---------- Scroll / resize / orientation ---------- */
+  slides.forEach(s => s.addEventListener('scroll', () => {
+    if (s.classList.contains('active')) checkOverflow();
+  }, {passive:true}));
+
+  let rt;
+  function onResize(){ clearTimeout(rt); rt = setTimeout(checkOverflow, 150); }
+  window.addEventListener('resize', onResize);
+  window.addEventListener('orientationchange', () => setTimeout(render, 220));
+
+  render();
+})();
+</script>
+</body>
+</html>
